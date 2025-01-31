@@ -1147,6 +1147,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                                 Some(self.param_env.and(trace.values)),
                                 e,
                                 true,
+                                None,
                             );
                         }
                     }
@@ -1210,7 +1211,7 @@ impl<'a, 'tcx> FnCtxt<'a, 'tcx> {
                             // - foo((), "current", 42u32, "next")
                             // + foo((), 42u32)
                             {
-                                prev_extra_idx.map_or(true, |prev_extra_idx| {
+                                prev_extra_idx.is_none_or(|prev_extra_idx| {
                                     prev_extra_idx + 1 == arg_idx.index()
                                 })
                             }

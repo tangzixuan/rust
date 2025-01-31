@@ -349,8 +349,8 @@ impl<'a, 'b, 'tcx> Visitor<'tcx> for TypeVerifier<'a, 'b, 'tcx> {
             let tcx = self.tcx();
             let maybe_uneval = match constant.const_ {
                 Const::Ty(_, ct) => match ct.kind() {
-                    ty::ConstKind::Unevaluated(_) => {
-                        bug!("should not encounter unevaluated Const::Ty here, got {:?}", ct)
+                    ty::ConstKind::Unevaluated(uv) => {
+                        Some(UnevaluatedConst { def: uv.def, args: uv.args, promoted: None })
                     }
                     _ => None,
                 },
@@ -2235,6 +2235,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
 
             Rvalue::RawPtr(..)
             | Rvalue::ThreadLocalRef(..)
+            | Rvalue::Len(..)
             | Rvalue::Discriminant(..)
             | Rvalue::NullaryOp(NullOp::OffsetOf(..), _) => {}
         }
@@ -2250,6 +2251,7 @@ impl<'a, 'tcx> TypeChecker<'a, 'tcx> {
             | Rvalue::Repeat(..)
             | Rvalue::Ref(..)
             | Rvalue::RawPtr(..)
+            | Rvalue::Len(..)
             | Rvalue::Cast(..)
             | Rvalue::ShallowInitBox(..)
             | Rvalue::BinaryOp(..)

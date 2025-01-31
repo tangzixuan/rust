@@ -182,6 +182,59 @@ pub enum BorrowKind {
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, TyEncodable, TyDecodable)]
 #[derive(Hash, HashStable)]
+pub enum RawPtrKind {
+    Mut,
+    Const,
+    /// Creates a raw pointer to a place that will only be used to access its metadata,
+    /// not the data behind the pointer. Note that this limitation is *not* enforced
+    /// by the validator.
+    ///
+    /// The borrow checker allows overlap of these raw pointers with references to the
+    /// data. This is sound even if the pointer is "misused" since any such use is anyway
+    /// unsafe. In terms of the operational semantics (i.e., Miri), this is equivalent
+    /// to `RawPtrKind::Mut`, but will never incur a retag.
+    FakeForPtrMetadata,
+}
+
+impl From<Mutability> for RawPtrKind {
+    fn from(other: Mutability) -> Self {
+        match other {
+            Mutability::Mut => RawPtrKind::Mut,
+            Mutability::Not => RawPtrKind::Const,
+        }
+    }
+}
+
+impl RawPtrKind {
+    pub fn is_fake(self) -> bool {
+        match self {
+            RawPtrKind::Mut | RawPtrKind::Const => false,
+            RawPtrKind::FakeForPtrMetadata => true,
+        }
+    }
+
+    pub fn to_mutbl_lossy(self) -> Mutability {
+        match self {
+            RawPtrKind::Mut => Mutability::Mut,
+            RawPtrKind::Const => Mutability::Not,
+
+            // We have no type corresponding to a fake borrow, so use
+            // `*const` as an approximation.
+            RawPtrKind::FakeForPtrMetadata => Mutability::Not,
+        }
+    }
+
+    pub fn ptr_str(self) -> &'static str {
+        match self {
+            RawPtrKind::Mut => "mut",
+            RawPtrKind::Const => "const",
+            RawPtrKind::FakeForPtrMetadata => "const (fake)",
+        }
+    }
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, TyEncodable, TyDecodable)]
+#[derive(Hash, HashStable)]
 pub enum MutBorrowKind {
     Default,
     /// This borrow arose from method-call auto-ref. (i.e., `adjustment::Adjust::Borrow`)
@@ -417,7 +470,14 @@ pub enum StatementKind<'tcx> {
     ///
     /// Interpreters and codegen backends that don't support coverage instrumentation
     /// can usually treat this as a no-op.
-    Coverage(CoverageKind),
+    Coverage(
+        // Coverage statements are unlikely to ever contain type information in
+        // the foreseeable future, so excluding them from TypeFoldable/TypeVisitable
+        // avoids some unhelpful derive boilerplate.
+        #[type_foldable(identity)]
+        #[type_visitable(ignore)]
+        CoverageKind,
+    ),
 
     /// Denotes a call to an intrinsic that does not require an unwind path and always returns.
     /// This avoids adding a new block and a terminator for simple intrinsics.
@@ -1016,6 +1076,7 @@ pub enum AssertKind<O> {
     ResumedAfterReturn(CoroutineKind),
     ResumedAfterPanic(CoroutineKind),
     MisalignedPointerDereference { required: O, found: O },
+    NullPointerDereference,
 }
 
 #[derive(Clone, Debug, PartialEq, TyEncodable, TyDecodable, Hash, HashStable)]
@@ -1349,7 +1410,17 @@ pub enum Rvalue<'tcx> {
     ///
     /// Like with references, the semantics of this operation are heavily dependent on the aliasing
     /// model.
-    RawPtr(Mutability, Place<'tcx>),
+    RawPtr(RawPtrKind, Place<'tcx>),
+
+    /// Yields the length of the place, as a `usize`.
+    ///
+    /// If the type of the place is an array, this is the array length. For slices (`[T]`, not
+    /// `&[T]`) this accesses the place's metadata to determine the length. This rvalue is
+    /// ill-formed for places of other types.
+    ///
+    /// This cannot be a `UnOp(PtrMetadata, _)` because that expects a value, and we only
+    /// have a place, and `UnOp(PtrMetadata, RawPtr(place))` is not a thing.
+    Len(Place<'tcx>),
 
     /// Performs essentially all of the casts that can be performed via `as`.
     ///

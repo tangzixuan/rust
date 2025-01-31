@@ -230,7 +230,9 @@ where
             Q::in_any_value_of_ty(cx, rvalue.ty(cx.body, cx.tcx))
         }
 
-        Rvalue::Discriminant(place) => in_place::<Q, _>(cx, in_local, place.as_ref()),
+        Rvalue::Discriminant(place) | Rvalue::Len(place) => {
+            in_place::<Q, _>(cx, in_local, place.as_ref())
+        }
 
         Rvalue::CopyForDeref(place) => in_place::<Q, _>(cx, in_local, place.as_ref()),
 
@@ -343,7 +345,7 @@ where
         Const::Ty(_, ct)
             if matches!(
                 ct.kind(),
-                ty::ConstKind::Param(_) | ty::ConstKind::Error(_) | ty::ConstKind::Value(_, _)
+                ty::ConstKind::Param(_) | ty::ConstKind::Error(_) | ty::ConstKind::Value(_)
             ) =>
         {
             None

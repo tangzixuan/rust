@@ -11,7 +11,7 @@ use std::{env, fs};
 
 use clap::ValueEnum;
 
-pub use self::cargo::Cargo;
+pub use self::cargo::{Cargo, cargo_profile_var};
 pub use crate::Compiler;
 use crate::core::build_steps::{
     check, clean, clippy, compile, dist, doc, gcc, install, llvm, run, setup, test, tool, vendor,
@@ -900,6 +900,7 @@ impl<'a> Builder<'a> {
                 clippy::BuildManifest,
                 clippy::CargoMiri,
                 clippy::Clippy,
+                clippy::CodegenGcc,
                 clippy::CollectLicenseMetadata,
                 clippy::Compiletest,
                 clippy::CoverageDump,

@@ -1391,7 +1391,11 @@ impl<'hir> LoweringContext<'_, 'hir> {
                         None,
                     );
                     // Destructure like a unit struct.
-                    let unit_struct_pat = hir::PatKind::Path(qpath);
+                    let unit_struct_pat = hir::PatKind::Expr(self.arena.alloc(hir::PatExpr {
+                        kind: hir::PatExprKind::Path(qpath),
+                        hir_id: self.next_id(),
+                        span: self.lower_span(lhs.span),
+                    }));
                     return self.pat_without_dbm(lhs.span, unit_struct_pat);
                 }
             }
@@ -2125,7 +2129,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         self.arena.alloc(self.expr_call_mut(span, e, args))
     }
 
-    fn expr_call_lang_item_fn_mut(
+    pub(super) fn expr_call_lang_item_fn_mut(
         &mut self,
         span: Span,
         lang_item: hir::LangItem,
@@ -2135,7 +2139,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         self.expr_call_mut(span, path, args)
     }
 
-    fn expr_call_lang_item_fn(
+    pub(super) fn expr_call_lang_item_fn(
         &mut self,
         span: Span,
         lang_item: hir::LangItem,
@@ -2159,7 +2163,7 @@ impl<'hir> LoweringContext<'_, 'hir> {
         let path = hir::ExprKind::Path(hir::QPath::TypeRelative(
             self.arena.alloc(self.ty(span, hir::TyKind::Path(qpath))),
             self.arena.alloc(hir::PathSegment::new(
-                Ident::new(name, span),
+                Ident::new(name, self.lower_span(span)),
                 self.next_id(),
                 Res::Err,
             )),

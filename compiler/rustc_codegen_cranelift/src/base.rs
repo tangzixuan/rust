@@ -417,6 +417,16 @@ fn codegen_fn_body(fx: &mut FunctionCx<'_, '_, '_>, start_block: Block) {
                             Some(source_info.span),
                         );
                     }
+                    AssertKind::NullPointerDereference => {
+                        let location = fx.get_caller_location(source_info).load_scalar(fx);
+
+                        codegen_panic_inner(
+                            fx,
+                            rustc_hir::LangItem::PanicNullPointerDereference,
+                            &[location],
+                            Some(source_info.span),
+                        )
+                    }
                     _ => {
                         let location = fx.get_caller_location(source_info).load_scalar(fx);
 
@@ -827,6 +837,12 @@ fn codegen_stmt<'tcx>(
                         fx.bcx.switch_to_block(done_block);
                         fx.bcx.ins().nop();
                     }
+                }
+                Rvalue::Len(place) => {
+                    let place = codegen_place(fx, place);
+                    let usize_layout = fx.layout_of(fx.tcx.types.usize);
+                    let len = codegen_array_len(fx, place);
+                    lval.write_cvalue(fx, CValue::by_val(len, usize_layout));
                 }
                 Rvalue::ShallowInitBox(ref operand, content_ty) => {
                     let content_ty = fx.monomorphize(content_ty);

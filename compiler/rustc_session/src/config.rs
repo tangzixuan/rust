@@ -189,6 +189,39 @@ pub enum CoverageLevel {
     Mcdc,
 }
 
+/// The different settings that the `-Z autodiff` flag can have.
+#[derive(Clone, Copy, PartialEq, Hash, Debug)]
+pub enum AutoDiff {
+    /// Print TypeAnalysis information
+    PrintTA,
+    /// Print ActivityAnalysis Information
+    PrintAA,
+    /// Print Performance Warnings from Enzyme
+    PrintPerf,
+    /// Combines the three print flags above.
+    Print,
+    /// Print the whole module, before running opts.
+    PrintModBefore,
+    /// Print the whole module just before we pass it to Enzyme.
+    /// For Debug purpose, prefer the OPT flag below
+    PrintModAfterOpts,
+    /// Print the module after Enzyme differentiated everything.
+    PrintModAfterEnzyme,
+
+    /// Enzyme's loose type debug helper (can cause incorrect gradients)
+    LooseTypes,
+
+    /// More flags
+    NoModOptAfter,
+    /// Tell Enzyme to run LLVM Opts on each function it generated. By default off,
+    /// since we already optimize the whole module after Enzyme is done.
+    EnableFncOpt,
+    NoVecUnroll,
+    RuntimeActivity,
+    /// Runs Enzyme specific Inlining
+    Inline,
+}
+
 /// Settings for `-Z instrument-xray` flag.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub struct InstrumentXRay {
@@ -675,7 +708,7 @@ impl OutputTypes {
 
     /// Returns `true` if user specified a name and not just produced type
     pub fn contains_explicit_name(&self, key: &OutputType) -> bool {
-        self.0.get(key).map_or(false, |f| f.is_some())
+        matches!(self.0.get(key), Some(Some(..)))
     }
 
     pub fn iter(&self) -> BTreeMapIter<'_, OutputType, Option<OutFileName>> {
@@ -888,7 +921,7 @@ impl Input {
             Input::File(file) => Some(file),
             Input::Str { name, .. } => match name {
                 FileName::Real(real) => real.local_path(),
-                FileName::QuoteExpansion(_) => None,
+                FileName::CfgSpec(_) => None,
                 FileName::Anon(_) => None,
                 FileName::MacroExpansion(_) => None,
                 FileName::ProcMacroSourceCode(_) => None,
@@ -1268,7 +1301,6 @@ pub enum EntryFnType {
         /// and an `include!()`.
         sigpipe: u8,
     },
-    Start,
 }
 
 #[derive(Copy, PartialEq, PartialOrd, Clone, Ord, Eq, Hash, Debug, Encodable, Decodable)]
@@ -1346,8 +1378,12 @@ pub fn build_configuration(sess: &Session, mut user_cfg: Cfg) -> Cfg {
     user_cfg
 }
 
-pub fn build_target_config(early_dcx: &EarlyDiagCtxt, opts: &Options, sysroot: &Path) -> Target {
-    match Target::search(&opts.target_triple, sysroot) {
+pub fn build_target_config(
+    early_dcx: &EarlyDiagCtxt,
+    target: &TargetTuple,
+    sysroot: &Path,
+) -> Target {
+    match Target::search(target, sysroot) {
         Ok((target, warnings)) => {
             for warning in warnings.warning_messages() {
                 early_dcx.early_warn(warning)
@@ -1951,7 +1987,7 @@ fn collect_print_requests(
     matches: &getopts::Matches,
 ) -> Vec<PrintRequest> {
     let mut prints = Vec::<PrintRequest>::new();
-    if cg.target_cpu.as_ref().is_some_and(|s| s == "help") {
+    if cg.target_cpu.as_deref() == Some("help") {
         prints.push(PrintRequest { kind: PrintKind::TargetCPUs, out: OutFileName::Stdout });
         cg.target_cpu = None;
     };
@@ -2899,7 +2935,7 @@ pub(crate) mod dep_tracking {
     };
 
     use super::{
-        BranchProtection, CFGuard, CFProtection, CollapseMacroDebuginfo, CoverageOptions,
+        AutoDiff, BranchProtection, CFGuard, CFProtection, CollapseMacroDebuginfo, CoverageOptions,
         CrateType, DebugInfo, DebugInfoCompression, ErrorOutputType, FmtDebug, FunctionReturn,
         InliningThreshold, InstrumentCoverage, InstrumentXRay, LinkerPluginLto, LocationDetail,
         LtoCli, MirStripDebugInfo, NextSolverConfig, OomStrategy, OptLevel, OutFileName,
@@ -2947,6 +2983,7 @@ pub(crate) mod dep_tracking {
     }
 
     impl_dep_tracking_hash_via_hash!(
+        AutoDiff,
         bool,
         usize,
         NonZero<usize>,

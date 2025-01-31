@@ -181,6 +181,7 @@ impl<'tcx> Stable<'tcx> for mir::Rvalue<'tcx> {
             RawPtr(mutability, place) => {
                 stable_mir::mir::Rvalue::AddressOf(mutability.stable(tables), place.stable(tables))
             }
+            Len(place) => stable_mir::mir::Rvalue::Len(place.stable(tables)),
             Cast(cast_kind, op, ty) => stable_mir::mir::Rvalue::Cast(
                 cast_kind.stable(tables),
                 op.stable(tables),
@@ -227,6 +228,18 @@ impl<'tcx> Stable<'tcx> for mir::Mutability {
         match *self {
             Not => stable_mir::mir::Mutability::Not,
             Mut => stable_mir::mir::Mutability::Mut,
+        }
+    }
+}
+
+impl<'tcx> Stable<'tcx> for mir::RawPtrKind {
+    type T = stable_mir::mir::RawPtrKind;
+    fn stable(&self, _: &mut Tables<'_>) -> Self::T {
+        use mir::RawPtrKind::*;
+        match *self {
+            Const => stable_mir::mir::RawPtrKind::Const,
+            Mut => stable_mir::mir::RawPtrKind::Mut,
+            FakeForPtrMetadata => stable_mir::mir::RawPtrKind::FakeForPtrMetadata,
         }
     }
 }
@@ -482,6 +495,9 @@ impl<'tcx> Stable<'tcx> for mir::AssertMessage<'tcx> {
                     required: required.stable(tables),
                     found: found.stable(tables),
                 }
+            }
+            AssertKind::NullPointerDereference => {
+                stable_mir::mir::AssertMessage::NullPointerDereference
             }
         }
     }

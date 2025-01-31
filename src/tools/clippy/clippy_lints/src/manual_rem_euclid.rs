@@ -80,12 +80,12 @@ impl<'tcx> LateLintPass<'tcx> for ManualRemEuclid {
                 Node::Param(..) => (),
                 Node::LetStmt(local) => {
                     let Some(ty) = local.ty else { return };
-                    if matches!(ty.kind, TyKind::Infer) {
+                    if matches!(ty.kind, TyKind::Infer(())) {
                         return;
                     }
                 },
                 _ => return,
-            };
+            }
 
             let mut app = Applicability::MachineApplicable;
             let rem_of = snippet_with_context(cx, rem2_lhs.span, ctxt, "_", &mut app).0;
