@@ -21,6 +21,7 @@
 
 // tidy-alphabetical-start
 #![allow(internal_features)]
+#![cfg_attr(bootstrap, feature(trait_upcasting))]
 #![doc(html_root_url = "https://doc.rust-lang.org/nightly/nightly-rustc/")]
 #![doc(rust_logo)]
 #![feature(array_windows)]
@@ -32,7 +33,6 @@
 #![feature(let_chains)]
 #![feature(rustc_attrs)]
 #![feature(rustdoc_internals)]
-#![feature(trait_upcasting)]
 #![warn(unreachable_pub)]
 // tidy-alphabetical-end
 
@@ -181,6 +181,7 @@ early_lint_methods!(
             UnusedDocComment: UnusedDocComment,
             Expr2024: Expr2024,
             Precedence: Precedence,
+            DoubleNegations: DoubleNegations,
         ]
     ]
 );
@@ -594,6 +595,11 @@ fn register_builtins(store: &mut LintStore) {
          <https://github.com/rust-lang/rust/pull/125380> for more information",
     );
     store.register_removed("unsupported_calling_conventions", "converted into hard error");
+    store.register_removed(
+        "cenum_impl_drop_cast",
+        "converted into hard error, \
+         see <https://github.com/rust-lang/rust/issues/73333> for more information",
+    );
 }
 
 fn register_internals(store: &mut LintStore) {

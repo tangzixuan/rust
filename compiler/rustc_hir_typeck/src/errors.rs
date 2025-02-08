@@ -19,8 +19,15 @@ use crate::fluent_generated as fluent;
 pub(crate) struct BaseExpressionDoubleDot {
     #[primary_span]
     pub span: Span,
+    #[suggestion(
+        hir_typeck_base_expression_double_dot_enable_default_field_values,
+        code = "#![feature(default_field_values)]\n",
+        applicability = "machine-applicable",
+        style = "verbose"
+    )]
+    pub default_field_values_suggestion: Option<Span>,
     #[subdiagnostic]
-    pub default_field_values: Option<BaseExpressionDoubleDotEnableDefaultFieldValues>,
+    pub default_field_values_help: Option<BaseExpressionDoubleDotEnableDefaultFieldValues>,
     #[subdiagnostic]
     pub add_expr: Option<BaseExpressionDoubleDotAddExpr>,
     #[subdiagnostic]
@@ -670,9 +677,11 @@ pub(crate) struct CannotCastToBool<'tcx> {
     pub help: CannotCastToBoolHelp,
 }
 
-#[derive(LintDiagnostic)]
+#[derive(Diagnostic)]
 #[diag(hir_typeck_cast_enum_drop)]
 pub(crate) struct CastEnumDrop<'tcx> {
+    #[primary_span]
+    pub span: Span,
     pub expr_ty: Ty<'tcx>,
     pub cast_ty: Ty<'tcx>,
 }

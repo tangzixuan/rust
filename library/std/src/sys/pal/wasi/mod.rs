@@ -1,8 +1,7 @@
 //! System bindings for the wasm/web platform
 //!
 //! This module contains the facade (aka platform-specific) implementations of
-//! OS level functionality for wasm. Note that this wasm is *not* the emscripten
-//! wasm, so we have no runtime here.
+//! OS level functionality for wasm.
 //!
 //! This is all super highly experimental and not actually intended for
 //! wide/production use yet, it's still all in the experimental category. This
@@ -23,7 +22,6 @@ pub mod fs;
 pub mod futex;
 pub mod io;
 
-pub mod net;
 pub mod os;
 #[path = "../unsupported/pipe.rs"]
 pub mod pipe;
@@ -46,5 +44,4 @@ mod helpers;
 // import conflict rules. If we glob export `helpers` and `common` together,
 // then the compiler complains about conflicts.
 
-use helpers::err2io;
-pub use helpers::{abort_internal, decode_error_kind, is_interrupted};
+pub(crate) use helpers::{abort_internal, decode_error_kind, err2io, is_interrupted};
