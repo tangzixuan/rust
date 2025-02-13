@@ -248,10 +248,11 @@ where
 
         let pred = inputs_and_output
             .map_bound(|(inputs, _)| {
-                ty::TraitRef::new(cx, goal.predicate.def_id(), [
-                    goal.predicate.self_ty(),
-                    Ty::new_tup(cx, inputs.as_slice()),
-                ])
+                ty::TraitRef::new(
+                    cx,
+                    goal.predicate.def_id(),
+                    [goal.predicate.self_ty(), Ty::new_tup(cx, inputs.as_slice())],
+                )
             })
             .to_host_effect_clause(cx, goal.predicate.constness);
 
@@ -371,6 +372,13 @@ where
         _goal: Goal<I, Self>,
     ) -> Result<Candidate<I>, NoSolution> {
         unreachable!("TransmuteFrom is not const")
+    }
+
+    fn consider_builtin_bikeshed_guaranteed_no_drop_candidate(
+        _ecx: &mut EvalCtxt<'_, D>,
+        _goal: Goal<I, Self>,
+    ) -> Result<Candidate<I>, NoSolution> {
+        unreachable!("BikeshedGuaranteedNoDrop is not const");
     }
 
     fn consider_structural_builtin_unsize_candidates(

@@ -19,6 +19,11 @@ use crate::solve::{
     MaybeCause, NoSolution, QueryResult,
 };
 
+enum AliasBoundKind {
+    SelfBounds,
+    NonSelfBounds,
+}
+
 /// A candidate is a possible way to prove a goal.
 ///
 /// It consists of both the `source`, which describes how that goal would be proven,
@@ -262,6 +267,11 @@ where
         goal: Goal<I, Self>,
     ) -> Result<Candidate<I>, NoSolution>;
 
+    fn consider_builtin_bikeshed_guaranteed_no_drop_candidate(
+        ecx: &mut EvalCtxt<'_, D>,
+        goal: Goal<I, Self>,
+    ) -> Result<Candidate<I>, NoSolution>;
+
     /// Consider (possibly several) candidates to upcast or unsize a type to another
     /// type, excluding the coercion of a sized type into a `dyn Trait`.
     ///
@@ -473,6 +483,9 @@ where
                 Some(TraitSolverLangItem::TransmuteTrait) => {
                     G::consider_builtin_transmute_candidate(self, goal)
                 }
+                Some(TraitSolverLangItem::BikeshedGuaranteedNoDrop) => {
+                    G::consider_builtin_bikeshed_guaranteed_no_drop_candidate(self, goal)
+                }
                 _ => Err(NoSolution),
             }
         };
@@ -510,7 +523,12 @@ where
         candidates: &mut Vec<Candidate<I>>,
     ) {
         let () = self.probe(|_| ProbeKind::NormalizedSelfTyAssembly).enter(|ecx| {
-            ecx.assemble_alias_bound_candidates_recur(goal.predicate.self_ty(), goal, candidates);
+            ecx.assemble_alias_bound_candidates_recur(
+                goal.predicate.self_ty(),
+                goal,
+                candidates,
+                AliasBoundKind::SelfBounds,
+            );
         });
     }
 
@@ -528,6 +546,7 @@ where
         self_ty: I::Ty,
         goal: Goal<I, G>,
         candidates: &mut Vec<Candidate<I>>,
+        consider_self_bounds: AliasBoundKind,
     ) {
         let (kind, alias_ty) = match self_ty.kind() {
             ty::Bool
@@ -580,16 +599,37 @@ where
             }
         };
 
-        for assumption in
-            self.cx().item_bounds(alias_ty.def_id).iter_instantiated(self.cx(), alias_ty.args)
-        {
-            candidates.extend(G::probe_and_consider_implied_clause(
-                self,
-                CandidateSource::AliasBound,
-                goal,
-                assumption,
-                [],
-            ));
+        match consider_self_bounds {
+            AliasBoundKind::SelfBounds => {
+                for assumption in self
+                    .cx()
+                    .item_self_bounds(alias_ty.def_id)
+                    .iter_instantiated(self.cx(), alias_ty.args)
+                {
+                    candidates.extend(G::probe_and_consider_implied_clause(
+                        self,
+                        CandidateSource::AliasBound,
+                        goal,
+                        assumption,
+                        [],
+                    ));
+                }
+            }
+            AliasBoundKind::NonSelfBounds => {
+                for assumption in self
+                    .cx()
+                    .item_non_self_bounds(alias_ty.def_id)
+                    .iter_instantiated(self.cx(), alias_ty.args)
+                {
+                    candidates.extend(G::probe_and_consider_implied_clause(
+                        self,
+                        CandidateSource::AliasBound,
+                        goal,
+                        assumption,
+                        [],
+                    ));
+                }
+            }
         }
 
         candidates.extend(G::consider_additional_alias_assumptions(self, goal, alias_ty));
@@ -600,9 +640,12 @@ where
 
         // Recurse on the self type of the projection.
         match self.structurally_normalize_ty(goal.param_env, alias_ty.self_ty()) {
-            Ok(next_self_ty) => {
-                self.assemble_alias_bound_candidates_recur(next_self_ty, goal, candidates)
-            }
+            Ok(next_self_ty) => self.assemble_alias_bound_candidates_recur(
+                next_self_ty,
+                goal,
+                candidates,
+                AliasBoundKind::NonSelfBounds,
+            ),
             Err(NoSolution) => {}
         }
     }
