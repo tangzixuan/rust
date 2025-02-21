@@ -50,6 +50,7 @@ use std::str::FromStr;
 use bitflags::bitflags;
 #[cfg(feature = "nightly")]
 use rustc_data_structures::stable_hasher::StableOrd;
+use rustc_hashes::Hash64;
 use rustc_index::{Idx, IndexSlice, IndexVec};
 #[cfg(feature = "nightly")]
 use rustc_macros::{Decodable_Generic, Encodable_Generic, HashStable_Generic};
@@ -140,7 +141,7 @@ pub struct ReprOptions {
     /// hash without loss, but it does pay the price of being larger.
     /// Everything's a tradeoff, a 64-bit seed should be sufficient for our
     /// purposes (primarily `-Z randomize-layout`)
-    pub field_shuffle_seed: u64,
+    pub field_shuffle_seed: Hash64,
 }
 
 impl ReprOptions {
@@ -1403,7 +1404,6 @@ impl AddressSpace {
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 #[cfg_attr(feature = "nightly", derive(HashStable_Generic))]
 pub enum BackendRepr {
-    Uninhabited,
     Scalar(Scalar),
     ScalarPair(Scalar, Scalar),
     Vector {
@@ -1422,10 +1422,9 @@ impl BackendRepr {
     #[inline]
     pub fn is_unsized(&self) -> bool {
         match *self {
-            BackendRepr::Uninhabited
-            | BackendRepr::Scalar(_)
-            | BackendRepr::ScalarPair(..)
-            | BackendRepr::Vector { .. } => false,
+            BackendRepr::Scalar(_) | BackendRepr::ScalarPair(..) | BackendRepr::Vector { .. } => {
+                false
+            }
             BackendRepr::Memory { sized } => !sized,
         }
     }
@@ -1442,12 +1441,6 @@ impl BackendRepr {
             BackendRepr::Scalar(scal) => scal.is_signed(),
             _ => panic!("`is_signed` on non-scalar ABI {self:?}"),
         }
-    }
-
-    /// Returns `true` if this is an uninhabited type
-    #[inline]
-    pub fn is_uninhabited(&self) -> bool {
-        matches!(*self, BackendRepr::Uninhabited)
     }
 
     /// Returns `true` if this is a scalar type
@@ -1470,7 +1463,7 @@ impl BackendRepr {
             BackendRepr::Vector { element, count } => {
                 cx.data_layout().vector_align(element.size(cx) * count)
             }
-            BackendRepr::Uninhabited | BackendRepr::Memory { .. } => return None,
+            BackendRepr::Memory { .. } => return None,
         })
     }
 
@@ -1491,7 +1484,7 @@ impl BackendRepr {
                 // to make the size a multiple of align (e.g. for vectors of size 3).
                 (element.size(cx) * count).align_to(self.inherent_align(cx)?.abi)
             }
-            BackendRepr::Uninhabited | BackendRepr::Memory { .. } => return None,
+            BackendRepr::Memory { .. } => return None,
         })
     }
 
@@ -1505,9 +1498,7 @@ impl BackendRepr {
             BackendRepr::Vector { element, count } => {
                 BackendRepr::Vector { element: element.to_union(), count }
             }
-            BackendRepr::Uninhabited | BackendRepr::Memory { .. } => {
-                BackendRepr::Memory { sized: true }
-            }
+            BackendRepr::Memory { .. } => BackendRepr::Memory { sized: true },
         }
     }
 
@@ -1703,6 +1694,11 @@ pub struct LayoutData<FieldIdx: Idx, VariantIdx: Idx> {
     /// The leaf scalar with the largest number of invalid values
     /// (i.e. outside of its `valid_range`), if it exists.
     pub largest_niche: Option<Niche>,
+    /// Is this type known to be uninhabted?
+    ///
+    /// This is separate from BackendRepr because uninhabited return types can affect ABI,
+    /// especially in the case of by-pointer struct returns, which allocate stack even when unused.
+    pub uninhabited: bool,
 
     pub align: AbiAndPrefAlign,
     pub size: Size,
@@ -1727,21 +1723,21 @@ pub struct LayoutData<FieldIdx: Idx, VariantIdx: Idx> {
     /// transmuted to `Foo<U>` we aim to create probalistically distinct seeds so that Foo can choose
     /// to reorder its fields based on that information. The current implementation is a conservative
     /// approximation of this goal.
-    pub randomization_seed: u64,
+    pub randomization_seed: Hash64,
 }
 
 impl<FieldIdx: Idx, VariantIdx: Idx> LayoutData<FieldIdx, VariantIdx> {
     /// Returns `true` if this is an aggregate type (including a ScalarPair!)
     pub fn is_aggregate(&self) -> bool {
         match self.backend_repr {
-            BackendRepr::Uninhabited | BackendRepr::Scalar(_) | BackendRepr::Vector { .. } => false,
+            BackendRepr::Scalar(_) | BackendRepr::Vector { .. } => false,
             BackendRepr::ScalarPair(..) | BackendRepr::Memory { .. } => true,
         }
     }
 
     /// Returns `true` if this is an uninhabited type
     pub fn is_uninhabited(&self) -> bool {
-        self.backend_repr.is_uninhabited()
+        self.uninhabited
     }
 
     pub fn scalar<C: HasDataLayout>(cx: &C, scalar: Scalar) -> Self {
@@ -1777,11 +1773,12 @@ impl<FieldIdx: Idx, VariantIdx: Idx> LayoutData<FieldIdx, VariantIdx> {
             fields: FieldsShape::Primitive,
             backend_repr: BackendRepr::Scalar(scalar),
             largest_niche,
+            uninhabited: false,
             size,
             align,
             max_repr_align: None,
             unadjusted_abi_align: align.abi,
-            randomization_seed,
+            randomization_seed: Hash64::new(randomization_seed),
         }
     }
 }
@@ -1801,6 +1798,7 @@ where
             backend_repr,
             fields,
             largest_niche,
+            uninhabited,
             variants,
             max_repr_align,
             unadjusted_abi_align,
@@ -1812,6 +1810,7 @@ where
             .field("abi", backend_repr)
             .field("fields", fields)
             .field("largest_niche", largest_niche)
+            .field("uninhabited", uninhabited)
             .field("variants", variants)
             .field("max_repr_align", max_repr_align)
             .field("unadjusted_abi_align", unadjusted_abi_align)
@@ -1876,7 +1875,6 @@ impl<FieldIdx: Idx, VariantIdx: Idx> LayoutData<FieldIdx, VariantIdx> {
             BackendRepr::Scalar(_) | BackendRepr::ScalarPair(..) | BackendRepr::Vector { .. } => {
                 false
             }
-            BackendRepr::Uninhabited => self.size.bytes() == 0,
             BackendRepr::Memory { sized } => sized && self.size.bytes() == 0,
         }
     }

@@ -1051,19 +1051,22 @@ fn test_prebuilt_llvm_config_path_resolution() {
         "#,
     );
 
-    let build = Build::new(config.clone());
-    let builder = Builder::new(&build);
+    // CI-LLVM isn't always available; check if it's enabled before testing.
+    if config.llvm_from_ci {
+        let build = Build::new(config.clone());
+        let builder = Builder::new(&build);
 
-    let actual = prebuilt_llvm_config(&builder, builder.config.build, false)
-        .llvm_result()
-        .llvm_config
-        .clone();
-    let expected = builder
-        .out
-        .join(builder.config.build)
-        .join("ci-llvm/bin")
-        .join(exe("llvm-config", builder.config.build));
-    assert_eq!(expected, actual);
+        let actual = prebuilt_llvm_config(&builder, builder.config.build, false)
+            .llvm_result()
+            .llvm_config
+            .clone();
+        let expected = builder
+            .out
+            .join(builder.config.build)
+            .join("ci-llvm/bin")
+            .join(exe("llvm-config", builder.config.build));
+        assert_eq!(expected, actual);
+    }
 }
 
 #[test]
@@ -1077,7 +1080,7 @@ fn test_is_builder_target() {
         let build = Build::new(config);
         let builder = Builder::new(&build);
 
-        assert!(builder.is_builder_target(&target1));
-        assert!(!builder.is_builder_target(&target2));
+        assert!(builder.is_builder_target(target1));
+        assert!(!builder.is_builder_target(target2));
     }
 }

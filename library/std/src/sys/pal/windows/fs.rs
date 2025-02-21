@@ -631,6 +631,10 @@ impl File {
         Ok(newpos as u64)
     }
 
+    pub fn tell(&self) -> io::Result<u64> {
+        self.seek(SeekFrom::Current(0))
+    }
+
     pub fn duplicate(&self) -> io::Result<File> {
         Ok(Self { handle: self.handle.try_clone()? })
     }
@@ -812,7 +816,7 @@ impl File {
     /// will prevent anyone from opening a new handle to the file.
     #[allow(unused)]
     fn win32_delete(&self) -> Result<(), WinError> {
-        let info = c::FILE_DISPOSITION_INFO { DeleteFile: c::TRUE as _ };
+        let info = c::FILE_DISPOSITION_INFO { DeleteFile: true };
         api::set_file_information_by_handle(self.handle.as_raw_handle(), &info)
     }
 
@@ -1372,7 +1376,7 @@ pub fn rename(old: &Path, new: &Path) -> io::Result<()> {
     if let Err(err) = result {
         if err.raw_os_error() == Some(c::ERROR_INVALID_PARAMETER as _) {
             // FileRenameInfoEx and FILE_RENAME_FLAG_POSIX_SEMANTICS were added in Windows 10 1607; retry with FileRenameInfo.
-            file_rename_info.Anonymous.ReplaceIfExists = 1;
+            file_rename_info.Anonymous.ReplaceIfExists = true;
 
             cvt(unsafe {
                 c::SetFileInformationByHandle(
@@ -1468,9 +1472,7 @@ pub fn link(original: &Path, link: &Path) -> io::Result<()> {
 
 #[cfg(target_vendor = "uwp")]
 pub fn link(_original: &Path, _link: &Path) -> io::Result<()> {
-    return Err(
-        io::const_error!(io::ErrorKind::Unsupported, "hard link are not supported on UWP",),
-    );
+    return Err(io::const_error!(io::ErrorKind::Unsupported, "hard link are not supported on UWP"));
 }
 
 pub fn stat(path: &Path) -> io::Result<FileAttr> {
